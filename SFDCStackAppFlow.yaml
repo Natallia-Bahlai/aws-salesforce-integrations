@@ -1,0 +1,375 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "Guidance for AWS and Salesforce Integrations - Amazon AppFlow"
+Parameters:
+  AuthorizationCode:
+    Type: String
+    Description: Salesforce connected app - initial access token.
+    
+  AccessToken:
+    Type: String
+    Default: Description: You can use the Amazon AppFlow console to create the connector profile, and then check its secret to retrieve refreshToekn.
+    
+  RefreshToken:
+    Type: String
+    Description: You can use the Amazon AppFlow console to create the connector profile, and then check its secret to retrieve refreshToekn.
+  
+  SalesforceInstanceURL:
+    Type: String
+    Default: "https://amazon694-dev-ed.develop.my.salesforce.com"
+    Description: Salesforce URL e.g. https://amazon694-dev-ed.develop.my.salesforce.com.
+  
+  SalesforceAPIVersion:
+    Type: String
+    Default: "61.0"
+    Description: Salesforce REST API version e.g. 61.0.
+
+  ProjectTagValue:
+    Type: String
+    Default: "SFDC"
+    Description: The Project Tag value applied to all resources.
+
+Resources:
+  # Common resources start
+  S3BucketPolicy:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::S3::BucketPolicy"
+    DeletionPolicy: "Delete"
+    Properties:
+      Bucket: !Ref S3BucketAppFlowSink
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement:
+          - Action:
+            - "s3:PutObject"
+            - "s3:AbortMultipartUpload"
+            - "s3:ListMultipartUploadParts"
+            - "s3:ListBucketMultipartUploads"
+            - "s3:GetBucketAcl"
+            - "s3:PutObjectAcl"
+            Resource:
+            - !Sub "arn:aws:s3:::${S3BucketAppFlowSink}"            
+            - !Sub "arn:aws:s3:::${S3BucketAppFlowSink}/*"
+            Effect: "Allow"
+            Principal:
+              Service: "appflow.amazonaws.com"
+      
+  S3BucketAppFlowSink:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::S3::Bucket"
+    DeletionPolicy: "Delete"
+    Properties:
+      PublicAccessBlockConfiguration:
+        RestrictPublicBuckets: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        BlockPublicAcls: true
+      BucketName: !Sub "sfdc-appflow-${AWS::AccountId}"
+      OwnershipControls:
+        Rules:
+        - ObjectOwnership: "BucketOwnerEnforced"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - BucketKeyEnabled: true
+          ServerSideEncryptionByDefault:
+            SSEAlgorithm: "AES256"
+  # Common resources end
+
+  # AppFlow integration start
+  KMSKeyForAppFlow:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::KMS::Key"
+    DeletionPolicy: "Delete"
+    Properties:
+      Origin: "AWS_KMS"
+      MultiRegion: false
+      Description: "Default key to protect AppFlow data"
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+        - Condition:
+            StringEquals:
+              kms:ViaService: !Sub "appflow.${AWS::Region}.amazonaws.com"
+              kms:CallerAccount: !Ref AWS::AccountId
+          Resource: "*"
+          Action:
+          - "kms:*"
+          Effect: "Allow"
+          Principal:
+            AWS: "*"
+        - Condition:
+            StringEquals:
+              kms:ViaService: !Sub "secretsmanager.${AWS::Region}.amazonaws.com"
+              kms:CallerAccount: !Ref AWS::AccountId
+          Resource: "*"
+          Action:
+          - "kms:*"
+          Effect: "Allow"
+          Principal:
+            AWS: "*"
+        - Resource: "*"
+          Action:
+          - "kms:*"
+          Effect: "Allow"
+          Principal:
+            AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+        - Resource: "*"
+          Action:
+          - "kms:*"
+          Effect: "Allow"
+          Principal:
+            Service: "appflow.amazonaws.com"
+        Id: "appflow"
+      KeySpec: "SYMMETRIC_DEFAULT"
+      Enabled: true
+      EnableKeyRotation: true
+      KeyUsage: "ENCRYPT_DECRYPT"
+      Tags: []
+
+  ConnectionAppFlow:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::AppFlow::ConnectorProfile"
+    DeletionPolicy: "Delete"
+    Properties:
+      ConnectorProfileName: "sfdc-connection"
+      ConnectionMode: "Public"
+      ConnectorType: "Salesforce"
+      ConnectorProfileConfig:
+        ConnectorProfileProperties:
+          Salesforce:
+            InstanceUrl: !Ref SalesforceInstanceURL
+            IsSandboxEnvironment: false
+        ConnectorProfileCredentials:
+          Salesforce:
+            OAuth2GrantType: "AUTHORIZATION_CODE"
+            AccessToken: !Ref AccessToken
+            RefreshToken: !Ref RefreshToken
+            ConnectorOAuthRequest:
+              AuthCode: !Ref AuthorizationCode
+              RedirectUri: !Sub "https://${AWS::Region}.console.aws.amazon.com/appflow/oauth"
+
+  AppFlowSFDC2S3:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::AppFlow::Flow"
+    DeletionPolicy: "Delete"
+    Properties:
+      Tasks:
+      - SourceFields:
+        - "Id"
+        - "Name"
+        ConnectorOperator:
+          Salesforce: "PROJECTION"
+        TaskType: "Filter"
+      - SourceFields:
+        - "Id"
+        DestinationField: "Id"
+        ConnectorOperator:
+          Salesforce: "NO_OP"
+        TaskType: "Map"
+        TaskProperties:
+        - Value: "id"
+          Key: "DESTINATION_DATA_TYPE"
+        - Value: "id"
+          Key: "SOURCE_DATA_TYPE"
+      - SourceFields:
+        - "Name"
+        DestinationField: "Name"
+        ConnectorOperator:
+          Salesforce: "NO_OP"
+        TaskType: "Map"
+        TaskProperties:
+        - Value: "string"
+          Key: "DESTINATION_DATA_TYPE"
+        - Value: "string"
+          Key: "SOURCE_DATA_TYPE"
+      FlowName: "data-sync-sfdc-s3"
+      TriggerConfig:
+        TriggerType: "Event"
+      DestinationFlowConfigList:
+      - ConnectorType: "S3"
+        DestinationConnectorProperties:
+          S3:
+            BucketName: !Ref S3BucketAppFlowSink
+            S3OutputFormatConfig:
+              PrefixConfig:
+                PrefixType: "FILENAME"
+                PathPrefixHierarchy:
+                - "SCHEMA_VERSION"
+              AggregationConfig:
+                AggregationType: "None"
+              PreserveSourceDataTyping: false
+              FileType: "PARQUET"
+      SourceFlowConfig:
+        ConnectorProfileName: !Ref ConnectionAppFlow
+        SourceConnectorProperties:
+          Salesforce:
+            IncludeDeletedRecords: false
+            Object: "AccountChangeEvent"
+            EnableDynamicFieldUpdate: false
+        IncrementalPullConfig: {}
+        ConnectorType: "Salesforce"
+      FlowStatus: "Active"
+      MetadataCatalogConfig:
+        GlueDataCatalog:
+          DatabaseName: !Ref DataCatalogDBSFDC
+          RoleArn: !GetAtt IAMRoleForGlueDataCatalog.Arn
+          TablePrefix: "sf"
+
+  PartnerEventBus:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::Events::EventBus"
+    DeletionPolicy: "Delete"
+    Properties:
+      Tags: []
+      EventSourceName: !Sub "aws.partner/appflow/salesforce.com/${AWS::AccountId}"
+      Name: !Sub "aws.partner/appflow/salesforce.com/${AWS::AccountId}"
+
+  AppFlowSFDC2EB:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::AppFlow::Flow"
+    DeletionPolicy: "Delete"
+    Properties:
+      Tasks:
+      - SourceFields:
+        - "Id"
+        - "Name"
+        - "Phone"
+        ConnectorOperator:
+          Salesforce: "PROJECTION"
+        TaskType: "Filter"
+      - SourceFields:
+        - "Id"
+        DestinationField: "Id"
+        ConnectorOperator:
+          Salesforce: "NO_OP"
+        TaskType: "Map"
+        TaskProperties:
+        - Value: "id"
+          Key: "DESTINATION_DATA_TYPE"
+        - Value: "id"
+          Key: "SOURCE_DATA_TYPE"
+      - SourceFields:
+        - "Name"
+        DestinationField: "Name"
+        ConnectorOperator:
+          Salesforce: "NO_OP"
+        TaskType: "Map"
+        TaskProperties:
+        - Value: "string"
+          Key: "DESTINATION_DATA_TYPE"
+        - Value: "string"
+          Key: "SOURCE_DATA_TYPE"
+      - SourceFields:
+        - "Phone"
+        DestinationField: "Phone"
+        ConnectorOperator:
+          Salesforce: "NO_OP"
+        TaskType: "Map"
+        TaskProperties:
+        - Value: "phone"
+          Key: "DESTINATION_DATA_TYPE"
+        - Value: "phone"
+          Key: "SOURCE_DATA_TYPE"
+      - SourceFields:
+        - "Phone"
+        ConnectorOperator:
+          Salesforce: "MASK_ALL"
+        TaskType: "Mask"
+        TaskProperties:
+        - Value: "5"
+          Key: "MASK_LENGTH"
+        - Value: "*"
+          Key: "MASK_VALUE"
+      FlowName: "data-sync-sfdc-eventbus"
+      TriggerConfig:
+        TriggerType: "Event"
+      DestinationFlowConfigList:
+      - ConnectorType: "EventBridge"
+        DestinationConnectorProperties:
+          EventBridge:
+            ErrorHandlingConfig:
+              FailOnFirstError: false
+              BucketName: !Ref S3BucketAppFlowSink
+            Object: !GetAtt PartnerEventBus.Name
+      SourceFlowConfig:
+        ConnectorProfileName: !Ref ConnectionAppFlow
+        SourceConnectorProperties:
+          Salesforce:
+            IncludeDeletedRecords: false
+            Object: "AccountChangeEvent"
+            EnableDynamicFieldUpdate: false
+        IncrementalPullConfig: {}
+        ConnectorType: "Salesforce"
+      FlowStatus: "Active"
+
+  IAMRoleForGlueDataCatalog:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::IAM::Role"
+    DeletionPolicy: "Delete"
+    Properties:
+      Path: "/service-role/"
+      MaxSessionDuration: 3600
+      RoleName: "sfdc-role-datacatalog"
+      Policies:
+      - PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Resource: "*"
+            Action:
+            - "s3:PutObject"
+            - "s3:GetBucketAcl"
+            - "s3:PutObjectAcl"
+            Effect: "Allow"
+          - Resource: "*"
+            Action:
+            - "glue:BatchCreatePartition"
+            - "glue:CreatePartitionIndex"
+            - "glue:DeleteDatabase"
+            - "glue:GetTableVersions"
+            - "glue:GetPartitions"
+            - "glue:BatchDeletePartition"
+            - "glue:DeleteTableVersion"
+            - "glue:UpdateTable"
+            - "glue:DeleteTable"
+            - "glue:DeletePartitionIndex"
+            - "glue:GetTableVersion"
+            - "glue:CreatePartition"
+            - "glue:UntagResource"
+            - "glue:UpdatePartition"
+            - "glue:TagResource"
+            - "glue:UpdateDatabase"
+            - "glue:CreateTable"
+            - "glue:BatchUpdatePartition"
+            - "glue:GetTables"
+            - "glue:BatchGetPartition"
+            - "glue:GetDatabases"
+            - "glue:GetPartitionIndexes"
+            - "glue:GetTable"
+            - "glue:GetDatabase"
+            - "glue:GetPartition"
+            - "glue:CreateDatabase"
+            - "glue:BatchDeleteTableVersion"
+            - "glue:BatchDeleteTable"
+            - "glue:DeletePartition"
+            Effect: "Allow"
+        PolicyName: "misc"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Condition:
+            StringEquals:
+              aws:SourceAccount: !Ref AWS::AccountId
+          Action: "sts:AssumeRole"
+          Effect: "Allow"
+          Principal:
+            Service: "appflow.amazonaws.com"
+            
+  DataCatalogDBSFDC:  
+    UpdateReplacePolicy: "Retain"
+    Type: AWS::Glue::Database
+    DeletionPolicy: "Delete"
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Description: "Database with Salesforce data"
+        Name: "salesforce"
+  # AppFlow integration end
