@@ -15,6 +15,7 @@ Identify which OAuth 2.0 authentication mechanism is the most suitable for your 
 ![Salesforce connected app configuration](https://github.com/Natallia-Bahlai/aws-salesforce-integrations/blob/f615558783016771538f21ef7c1748359c597c89/salesforce-connected-app.png)
 
 ## Amazon AppFlow
+![AppFlow integration with Salesforce](https://github.com/Natallia-Bahlai/aws-salesforce-integrations/blob/948360e96315d713438edc7df11d519f38351911/Salesforce-%20AppFlow.png)
 
 1. Generate 'Initial Access Token' in the Salesforce connected app 
 2. Obtain accessToken and refreshToken
@@ -22,6 +23,7 @@ Identify which OAuth 2.0 authentication mechanism is the most suitable for your 
 4. Perform Account changes in Salesforce and review results in Amazon Athena
 
 ## AWS Step Functions
+![AppFlow integration with Salesforce](https://github.com/Natallia-Bahlai/aws-salesforce-integrations/blob/948360e96315d713438edc7df11d519f38351911/Salesforce-StepFunc.png)
 
 1. Copy clientId and clientSecret from the Salesforce connected app with client credentials flow
 2. Deploy CloudFormation template SFDCStackStepFunction.yaml
