@@ -28,3 +28,22 @@ Identify which OAuth 2.0 authentication mechanism is the most suitable for your 
 1. Copy clientId and clientSecret from the Salesforce connected app with client credentials flow
 2. Deploy CloudFormation template SFDCStackStepFunction.yaml
 3. Execute AWS Step Function
+
+## AWS Step Functions
+![AppFlow integration with Salesforce](https://github.com/Natallia-Bahlai/aws-salesforce-integrations/blob/948360e96315d713438edc7df11d519f38351911/Salesforce-KDS-Proxy.png)
+
+1. Deploy CloudFormation template SFDCStackKDSProxy.yaml
+2. Invoke the Amazon Kinesis Proxy. You can run it from Postman selecting AWS signature in Authorization and specifying the AccessKey, SecretKey, Session Token:
+```
+ curl --location 'https://{api-id}.execute-api.{region}.amazonaws.com/event' \
+--header 'Content-Type: application/x-amz-json-1.1' \
+--header 'X-Amz-Content-Sha256: ••••••' \
+--header 'X-Amz-Security-Token: ••••••' \
+--header 'X-Amz-Date: ••••••' \
+--header 'Authorization: ••••••' \
+--data '{
+  "StreamName": "sfdc-kds",
+  "Data": "{data}",
+  "PartitionKey": "{partition-key}"
+}'
+```
