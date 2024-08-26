@@ -47,4 +47,4 @@ Identify which OAuth 2.0 authentication mechanism is the most suitable for your 
   "PartitionKey": "{partition-key}"
 }'
 ```
-Follow ![this guide](https://help.salesforce.com/s/articleView?id=sf.nc_create_edit_awssig4_ext_cred.htm&language=en_US) to apply SigV4 from Salesforce side.
+Follow [this guide](https://help.salesforce.com/s/articleView?id=sf.nc_create_edit_awssig4_ext_cred.htm&language=en_US) to apply SigV4 from Salesforce side.
