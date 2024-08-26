@@ -33,7 +33,7 @@ Identify which OAuth 2.0 authentication mechanism is the most suitable for your 
 ![EDA with Salesforce sending data to Amazon Kinesis Proxy](https://github.com/Natallia-Bahlai/aws-salesforce-integrations/blob/86ac743dec2c794c0ae6dd3c9e79890a179d962d/Salesforce-KDS-Proxy.png)
 
 1. Deploy CloudFormation template SFDCStackKDSProxy.yaml
-2. Invoke the Amazon Kinesis Proxy signing request using AWS Signature Version 4 (SigV4). You can run it from Postman selecting AWS signature in Authorization and specifying the AccessKey, SecretKey, Session Token:
+2. Invoke the Amazon Kinesis Proxy signing request using AWS Signature Version 4 (SigV4). You can test it from Postman selecting AWS signature in Authorization and specifying the AccessKey, SecretKey, Session Token:
 ```
  curl --location 'https://{api-id}.execute-api.{region}.amazonaws.com/event' \
 --header 'Content-Type: application/x-amz-json-1.1' \
@@ -47,4 +47,4 @@ Identify which OAuth 2.0 authentication mechanism is the most suitable for your 
   "PartitionKey": "{partition-key}"
 }'
 ```
-Follow [this guide](https://help.salesforce.com/s/articleView?id=sf.nc_create_edit_awssig4_ext_cred.htm&language=en_US) to apply SigV4 from Salesforce side.
+Follow [this guide](https://help.salesforce.com/s/articleView?id=sf.nc_create_edit_awssig4_ext_cred.htm&language=en_US) to apply SigV4 from Salesforce side for HTTP callouts.
