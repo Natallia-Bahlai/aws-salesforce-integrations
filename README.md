@@ -29,11 +29,11 @@ Identify which OAuth 2.0 authentication mechanism is the most suitable for your 
 2. Deploy CloudFormation template SFDCStackStepFunction.yaml
 3. Execute AWS Step Function
 
-## AWS Step Functions
-![AppFlow integration with Salesforce](https://github.com/Natallia-Bahlai/aws-salesforce-integrations/blob/948360e96315d713438edc7df11d519f38351911/Salesforce-KDS-Proxy.png)
+## AWS Event-driven integration using HTTP Proxy with Amazon Kinesis Data Streams
+![EDA with Salesforce sending data to Amazon Kinesis Proxy](https://github.com/Natallia-Bahlai/aws-salesforce-integrations/blob/86ac743dec2c794c0ae6dd3c9e79890a179d962d/Salesforce-KDS-Proxy.png)
 
 1. Deploy CloudFormation template SFDCStackKDSProxy.yaml
-2. Invoke the Amazon Kinesis Proxy. You can run it from Postman selecting AWS signature in Authorization and specifying the AccessKey, SecretKey, Session Token:
+2. Invoke the Amazon Kinesis Proxy signing request using AWS Signature Version 4 (SignV4). You can run it from Postman selecting AWS signature in Authorization and specifying the AccessKey, SecretKey, Session Token:
 ```
  curl --location 'https://{api-id}.execute-api.{region}.amazonaws.com/event' \
 --header 'Content-Type: application/x-amz-json-1.1' \
