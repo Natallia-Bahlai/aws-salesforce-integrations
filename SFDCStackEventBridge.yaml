@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: "Guidance for AWS and Salesforce Integrations - AWS Step Functions"
+Description: "Guidance for AWS and Salesforce Integrations - Amazon Event Bridge"
 Parameters:
   ClientId:
     Type: String
