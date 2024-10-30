@@ -15,7 +15,7 @@ Identify which OAuth 2.0 authentication mechanism is the most suitable for your 
 ![Salesforce connected app configuration](https://github.com/Natallia-Bahlai/aws-salesforce-integrations/blob/f615558783016771538f21ef7c1748359c597c89/salesforce-connected-app.png)
 
 ## Amazon AppFlow
-![AppFlow integration with Salesforce](https://github.com/Natallia-Bahlai/aws-salesforce-integrations/blob/948360e96315d713438edc7df11d519f38351911/Salesforce-%20AppFlow.png)
+![AppFlow integration with Salesforce](https://github.com/Natallia-Bahlai/aws-salesforce-integrations/blob/52b4bcda1963cf8a24e902afba3467ef53b4dd83/Salesforce-AppFlow.png)
 
 1. Generate 'Initial Access Token' in the Salesforce connected app 
 2. Obtain accessToken and refreshToken
