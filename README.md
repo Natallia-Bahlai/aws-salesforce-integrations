@@ -22,8 +22,9 @@ Identify which OAuth 2.0 authentication mechanism is the most suitable for your 
 3. Deploy CloudFormation template /cloudformation/StackAppFlowToS3.yaml or /cloudformation/StackAppFlowToEventBridge.yaml
 4. Perform Account changes in Salesforce and review AppFlow Run history
 5. Review results in Amazon Athena by running:
-```
-
+```sql
+SELECT * FROM "salesforce"."tbl_appflow_accountssyncsfdcs3_sv1" limit 10;
+SELECT * FROM "salesforce"."tbl_appflow_accountssyncsfdcs3_{execution_id}_latest" limit 10;
 ```
 
 ## AWS Step Functions
@@ -38,18 +39,18 @@ Identify which OAuth 2.0 authentication mechanism is the most suitable for your 
 
 1. Deploy CloudFormation template /cloudformation/StackKDSProxy.yaml
 2. Invoke the Amazon Kinesis Proxy signing request using AWS Signature Version 4 (SigV4). You can test it from Postman selecting AWS signature in Authorization and specifying the AccessKey, SecretKey, Session Token:
-```
- curl --location 'https://{api-id}.execute-api.{region}.amazonaws.com/event' \
---header 'Content-Type: application/x-amz-json-1.1' \
---header 'X-Amz-Content-Sha256: ••••••' \
---header 'X-Amz-Security-Token: ••••••' \
---header 'X-Amz-Date: ••••••' \
---header 'Authorization: ••••••' \
---data '{
+```http
+POST /event HTTP/1.1
+Host: {api-id}.execute-api.{region}.amazonaws.com
+Content-Type: application/x-amz-json-1.1
+Authorization: ••••••
+Content-Length: 87
+
+{
   "StreamName": "sfdc-kds",
-  "Data": "{data}",
-  "PartitionKey": "{partition-key}"
-}'
+  "Data": "test",
+  "PartitionKey": "sfdc"
+}
 ```
 Follow [this guide](https://help.salesforce.com/s/articleView?id=sf.nc_create_edit_awssig4_ext_cred.htm&language=en_US) to apply SigV4 from Salesforce side for HTTP callouts.
 
