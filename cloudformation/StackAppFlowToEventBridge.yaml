@@ -215,7 +215,7 @@ Resources:
           Key: "MASK_LENGTH"
         - Value: "*"
           Key: "MASK_VALUE"
-      FlowName: "data-sync-sfdc-eventbus"
+      FlowName: "accounts-sync-sfdc-eventbus"
       TriggerConfig:
         TriggerType: "Event"
       DestinationFlowConfigList:

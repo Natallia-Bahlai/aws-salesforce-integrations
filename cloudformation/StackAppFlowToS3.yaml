@@ -184,7 +184,7 @@ Resources:
           Key: "DESTINATION_DATA_TYPE"
         - Value: "string"
           Key: "SOURCE_DATA_TYPE"
-      FlowName: "data-sync-sfdc-s3"
+      FlowName: "accounts-sync-sfdc-s3"
       TriggerConfig:
         TriggerType: "Event"
       DestinationFlowConfigList:
@@ -199,7 +199,7 @@ Resources:
                 - "SCHEMA_VERSION"
               AggregationConfig:
                 AggregationType: "None"
-              PreserveSourceDataTyping: false
+              PreserveSourceDataTyping: true
               FileType: "PARQUET"
       SourceFlowConfig:
         ConnectorProfileName: !Ref ConnectionAppFlow
@@ -215,7 +215,7 @@ Resources:
         GlueDataCatalog:
           DatabaseName: !Ref DataCatalogDBSFDC
           RoleArn: !GetAtt IAMRoleForGlueDataCatalog.Arn
-          TablePrefix: "sf"
+          TablePrefix: "tbl"
 
   IAMRoleForGlueDataCatalog:
     UpdateReplacePolicy: "Retain"
