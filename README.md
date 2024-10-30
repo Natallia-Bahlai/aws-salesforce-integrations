@@ -12,7 +12,7 @@ Identify which OAuth 2.0 authentication mechanism is the most suitable for your 
 * [Authorization code](https://help.salesforce.com/s/articleView?id=sf.remoteaccess_oauth_web_server_flow.htm)
 * [JWT](https://help.salesforce.com/s/articleView?id=sf.remoteaccess_oauth_jwt_flow.htm)
 
-![Salesforce connected app configuration](https://github.com/Natallia-Bahlai/aws-salesforce-integrations/blob/f615558783016771538f21ef7c1748359c597c89/salesforce-connected-app.png)
+![Salesforce connected app configuration](https://github.com/Natallia-Bahlai/aws-salesforce-integrations/blob/77c5d9ed088437ef051db9ac89fdb8b8ea69d24a/salesforce-connected-app.png)
 
 ## Amazon AppFlow
 ![AppFlow integration with Salesforce](https://github.com/Natallia-Bahlai/aws-salesforce-integrations/blob/52b4bcda1963cf8a24e902afba3467ef53b4dd83/Salesforce-AppFlow.png)
