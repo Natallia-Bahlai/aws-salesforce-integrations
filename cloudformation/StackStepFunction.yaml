@@ -1,0 +1,383 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "Guidance for AWS and Salesforce Integrations - AWS Step Functions"
+Parameters:
+  ClientId:
+    Type: String
+    Description: Salesforce connected app - client id.
+    
+  ClientSecret:
+    Type: String
+    Description: Salesforce connected app - client secret.
+  
+  SalesforceInstanceURL:
+    Type: String
+    Default: "https://amazon694-dev-ed.develop.my.salesforce.com"
+    Description: Salesforce URL e.g. https://amazon694-dev-ed.develop.my.salesforce.com.
+  
+  SalesforceAPIVersion:
+    Type: String
+    Default: "61.0"
+    Description: Salesforce REST API version e.g. 61.0.
+
+  ProjectTagValue:
+    Type: String
+    Default: "SFDC"
+    Description: The Project Tag value applied to all resources.
+
+Resources:
+  # Common resources start
+  S3BucketPolicy:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::S3::BucketPolicy"
+    DeletionPolicy: "Delete"
+    Properties:
+      Bucket: !Ref S3BucketAppFlowSink
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement:
+          - Action:
+            - "s3:PutObject"
+            - "s3:AbortMultipartUpload"
+            - "s3:ListMultipartUploadParts"
+            - "s3:ListBucketMultipartUploads"
+            - "s3:GetBucketAcl"
+            - "s3:PutObjectAcl"
+            Resource:
+            - !Sub "arn:aws:s3:::${S3BucketAppFlowSink}"            
+            - !Sub "arn:aws:s3:::${S3BucketAppFlowSink}/*"
+            Effect: "Allow"
+            Principal:
+              Service: "appflow.amazonaws.com"
+      
+  S3BucketAppFlowSink:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::S3::Bucket"
+    DeletionPolicy: "Delete"
+    Properties:
+      PublicAccessBlockConfiguration:
+        RestrictPublicBuckets: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        BlockPublicAcls: true
+      BucketName: !Sub "sfdc-stepfunc-${AWS::AccountId}"
+      OwnershipControls:
+        Rules:
+        - ObjectOwnership: "BucketOwnerEnforced"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - BucketKeyEnabled: true
+          ServerSideEncryptionByDefault:
+            SSEAlgorithm: "AES256"
+  # Common resources end
+
+  # StepFunc integration start
+  ConnectionEventBridge:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::Events::Connection"
+    DeletionPolicy: "Delete"
+    Properties:
+      Name: "sfdc-connection-for-stepfunc"
+      AuthorizationType: "OAUTH_CLIENT_CREDENTIALS"
+      AuthParameters:
+        OAuthParameters:
+          ClientParameters:
+            ClientID: !Ref ClientId
+            ClientSecret: !Ref ClientSecret
+          AuthorizationEndpoint: !Sub "${SalesforceInstanceURL}/services/oauth2/token"
+          HttpMethod: POST
+          OAuthHttpParameters:
+            BodyParameters:
+            - IsValueSecret: false
+              Key: "grant_type"
+              Value: "client_credentials"
+  
+  LambdaSFDC2S3:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::Lambda::Function"
+    DeletionPolicy: "Delete"
+    Properties:
+      MemorySize: 128
+      Description: ""
+      TracingConfig:
+        Mode: "PassThrough"
+      Timeout: 123
+      RuntimeManagementConfig:
+        UpdateRuntimeOn: "Auto"
+      Handler: "index.lambda_handler"
+      Code:
+        ZipFile: !Sub |
+            import json
+            import boto3
+            import requests
+
+            def lambda_handler(event, context):
+                # TODO error handling
+                secret_name = "${ConnectionEventBridge.SecretArn}"                
+                region_name = "${AWS::Region}"
+
+                # Create a Secrets Manager client
+                session = boto3.session.Session()
+                client = session.client(
+                    service_name='secretsmanager',
+                    region_name=region_name
+                )
+
+                get_secret_value_response = client.get_secret_value(SecretId=secret_name)
+                secret = json.loads(get_secret_value_response['SecretString'])
+                access_token=secret['access_token']
+
+                url = '${SalesforceInstanceURL}/services/data/v${SalesforceAPIVersion}/jobs/query/' + event['jobId'] + '/results'
+                headers = {'Accept': 'text/csv', 'Authorization': 'Bearer ' + access_token}
+                x = requests.get(url,headers=headers)
+
+                s3_sink = boto3.resource('s3')
+                s3_sink.Object('${S3BucketAppFlowSink}', 'accounts.csv').put(Body=x.content)
+                
+                return {
+                    'statusCode': 200,
+                    'body': json.dumps('Hello from Lambda!')
+                }
+      Role: !GetAtt IAMRoleForLambda.Arn
+      FileSystemConfigs: []
+      FunctionName: "data-sync-sfdc-s3"
+      Runtime: "python3.12"
+      PackageType: "Zip"
+      LoggingConfig:
+        LogFormat: "Text"
+        LogGroup: !Ref LogGroupForLambda
+      EphemeralStorage:
+        Size: 512
+      Layers:
+      - !Sub "arn:aws:lambda:${AWS::Region}:770693421928:layer:Klayers-p312-requests:7"
+      Architectures:
+      - "arm64"
+
+  IAMRoleForLambda:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::IAM::Role"
+    DeletionPolicy: "Delete"
+    Properties:
+      Path: "/service-role/"
+      ManagedPolicyArns:
+      - "arn:aws:iam::aws:policy/AmazonS3FullAccess" #Revisit
+      - "arn:aws:iam::aws:policy/SecretsManagerReadWrite" #Revisit
+      MaxSessionDuration: 3600
+      RoleName: "sfdc-role-lambda"
+      Policies:
+      - PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Resource: !GetAtt LogGroupForLambda.Arn
+            Action:
+            - "logs:CreateLogStream"
+            - "logs:PutLogEvents"
+            Effect: "Allow"
+        PolicyName: "misc"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Action: "sts:AssumeRole"
+          Effect: "Allow"
+          Principal:
+            Service: "lambda.amazonaws.com"
+
+  LogGroupForLambda: 
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::Logs::LogGroup"
+    DeletionPolicy: "Delete"
+    Properties: 
+      LogGroupName: "/aws/lambda/data-sync-sfdc-s3"
+      RetentionInDays: 1
+          
+  StepFuncSFDC2S3:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::StepFunctions::StateMachine"
+    DeletionPolicy: "Delete"
+    Properties:
+      DefinitionSubstitutions:
+        LambdaSfdc: !GetAtt LambdaSFDC2S3.Arn
+        ConnectionSfdc: !GetAtt ConnectionEventBridge.Arn
+        InstanceURLSfdc: !Ref SalesforceInstanceURL
+        APIVersionSfdc: !Ref SalesforceAPIVersion
+      DefinitionString: |-
+        {
+          "Comment": "A description of my state machine",
+          "StartAt": "Create a Query Job",
+          "States": {
+            "Create a Query Job": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::http:invoke",
+              "Parameters": {
+                "ApiEndpoint": "${InstanceURLSfdc}/services/data/v${APIVersionSfdc}/jobs/query",
+                "Authentication": {
+                  "ConnectionArn": "${ConnectionSfdc}"
+                },
+                "Method": "POST",
+                "RequestBody": {
+                  "operation": "query",
+                  "query": "SELECT Id,Description,Name FROM Account",
+                  "contentType": "CSV"
+                }
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "BackoffRate": 2,
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "JitterStrategy": "FULL"
+                }
+              ],
+              "Next": "Wait",
+              "ResultSelector": {
+                "getJobInfo.$": "States.Format('${InstanceURLSfdc}/services/data/v${APIVersionSfdc}/jobs/query/{}', $.ResponseBody.id)"
+              }
+            },
+            "Wait": {
+              "Type": "Wait",
+              "Seconds": 30,
+              "Next": "Get Query Job Info"
+            },
+            "Get Query Job Info": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::http:invoke",
+              "Parameters": {
+                "Authentication": {
+                  "ConnectionArn": "${ConnectionSfdc}"
+                },
+                "Method": "GET",
+                "ApiEndpoint.$": "$.getJobInfo"
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "BackoffRate": 2,
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "JitterStrategy": "FULL"
+                }
+              ],
+              "Next": "Choice",
+              "ResultSelector": {
+                "jobId.$": "$.ResponseBody.id",
+                "state.$": "$.ResponseBody.state"
+              }
+            },
+            "Choice": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.state",
+                  "StringEquals": "JobComplete",
+                  "Next": "Lambda Invoke"
+                }
+              ],
+              "Default": "Wait"
+            },
+            "Lambda Invoke": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "OutputPath": "$.Payload",
+              "Parameters": {
+                "Payload.$": "$",
+                "FunctionName": "${LambdaSfdc}:$LATEST"
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2
+                }
+              ],
+              "End": true
+            }
+          }
+        }
+      EncryptionConfiguration:
+        Type: "AWS_OWNED_KEY"
+      LoggingConfiguration:
+        IncludeExecutionData: true
+        Destinations:
+        - CloudWatchLogsLogGroup:
+            LogGroupArn: !GetAtt LogGroupForStepFunc.Arn
+        Level: "ALL"
+      StateMachineName: "data-sync-sfdc-s3"
+      RoleArn: !GetAtt IAMRoleForStepFunc.Arn
+      Tags: []
+      StateMachineType: "STANDARD"
+      TracingConfiguration:
+        Enabled: false
+            
+  IAMRoleForStepFunc:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::IAM::Role"
+    DeletionPolicy: "Delete"
+    Properties:
+      Path: "/service-role/"
+      MaxSessionDuration: 3600
+      RoleName: "sfdc-role-stepfunction"
+      Policies:
+      - PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Resource: !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:*"
+            Action:
+            - "states:InvokeHTTPEndpoint"
+            Effect: "Allow"
+          - Resource: !GetAtt ConnectionEventBridge.Arn
+            Action:
+            - "events:RetrieveConnectionCredentials"
+            Effect: "Allow"
+          - Resource: !GetAtt ConnectionEventBridge.SecretArn
+            Action:
+            - "secretsmanager:GetSecretValue"
+            - "secretsmanager:DescribeSecret"
+            Effect: "Allow"
+          - Resource: "*"
+            Action:
+            - "logs:CreateLogDelivery"
+            - "logs:GetLogDelivery"
+            - "logs:UpdateLogDelivery"
+            - "logs:DeleteLogDelivery"
+            - "logs:ListLogDeliveries"
+            - "logs:PutResourcePolicy"
+            - "logs:DescribeResourcePolicies"
+            - "logs:DescribeLogGroups"
+            Effect: "Allow"
+          - Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaSFDC2S3}:$LATEST"
+            Action:
+            - "lambda:InvokeFunction"
+            Effect: "Allow"
+        PolicyName: "misc"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Condition:
+            StringEquals:
+              aws:SourceAccount: !Sub "${AWS::AccountId}"
+            ArnLike:
+              aws:SourceArn: !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:*"
+          Action: "sts:AssumeRole"
+          Effect: "Allow"
+          Principal:
+            Service: "states.amazonaws.com"
+
+  LogGroupForStepFunc:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::Logs::LogGroup"
+    DeletionPolicy: "Delete"
+    Properties:
+      LogGroupClass: "STANDARD"
+      LogGroupName: "/aws/stepfunc/states/data-sync-sfdc-s3"
+      DataProtectionPolicy: {}
+  # StepFunc integration end

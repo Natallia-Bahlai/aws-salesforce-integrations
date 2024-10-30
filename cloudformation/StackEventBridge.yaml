@@ -1,0 +1,154 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "Guidance for AWS and Salesforce Integrations - Amazon Event Bridge"
+Parameters:
+  ClientId:
+    Type: String
+    Description: Salesforce connected app - client id.
+    
+  ClientSecret:
+    Type: String
+    Description: Salesforce connected app - client secret.
+  
+  SalesforceInstanceURL:
+    Type: String
+    Default: "https://amazon694-dev-ed.develop.my.salesforce.com"
+    Description: Salesforce URL e.g. https://amazon694-dev-ed.develop.my.salesforce.com.
+  
+  SalesforceAPIVersion:
+    Type: String
+    Default: "61.0"
+    Description: Salesforce REST API version e.g. 61.0.
+
+  ProjectTagValue:
+    Type: String
+    Default: "SFDC"
+    Description: The Project Tag value applied to all resources.
+
+Resources:
+  ConnectionEventBridge:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::Events::Connection"
+    DeletionPolicy: "Delete"
+    Properties:
+      Name: "sfdc-connection"
+      AuthorizationType: "OAUTH_CLIENT_CREDENTIALS"
+      AuthParameters:
+        OAuthParameters:
+          ClientParameters:
+            ClientID: !Ref ClientId
+            ClientSecret: !Ref ClientSecret
+          AuthorizationEndpoint: !Sub "${SalesforceInstanceURL}/services/oauth2/token"
+          HttpMethod: POST
+          OAuthHttpParameters:
+            BodyParameters:
+            - IsValueSecret: false
+              Key: "grant_type"
+              Value: "client_credentials"
+  
+  APIDestinationSFDC:
+    Type: AWS::Events::ApiDestination
+    Properties:
+      ConnectionArn: !GetAtt ConnectionEventBridge.Arn
+      Description: API Destination to send events to Salesforce
+      HttpMethod: POST
+      InvocationEndpoint: !Sub "${SalesforceInstanceURL}/services/data/v${SalesforceAPIVersion}/composite"
+            
+  IAMRoleForEBRule:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::IAM::Role"
+    DeletionPolicy: "Delete"
+    Properties:
+      Path: "/service-role/"
+      MaxSessionDuration: 3600
+      RoleName: !Sub "sfdc-role-eb-apidestination-${AWS::Region}"
+      Policies:
+      - PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Resource: !GetAtt APIDestinationSFDC.Arn
+            Action:
+            - "events:InvokeApiDestination"
+            Effect: "Allow"
+        PolicyName: "misc"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Action: "sts:AssumeRole"
+          Effect: "Allow"
+          Principal:
+            Service: "apidestinations.events.amazonaws.com"
+
+  EventsRuleSFDC:
+    UpdateReplacePolicy: Retain
+    Type: AWS::Events::Rule
+    DeletionPolicy: Delete
+    Properties:
+      EventBusName: "default"
+      EventPattern:
+        source:
+          - com.src.test
+        detail-type:
+          - accountsync
+        account:
+          - !Sub "${AWS::AccountId}"
+        region:
+          - !Sub "${AWS::Region}"
+      Targets:
+        - Id: Idfc15f115-3013-4a09-838e-1d3f72e6ebe7
+          HttpParameters:
+            PathParameterValues: []
+            HeaderParameters: {}
+            QueryStringParameters: {}
+          InputTransformer:
+            InputTemplate: "{
+
+              \t\"allOrNone\" : true,
+
+              \t\"compositeRequest\": [
+
+              \t\t{
+
+              \t\t\t\"method\": \"POST\",
+
+              \t\t\t\"url\": \"/services/data/v61.0/sobjects/Account\",
+
+              \t\t\t\"referenceId\": \"refAccount\",
+
+              \t\t\t\"body\": {
+
+              \t\t\t\t\"Name\": <accountName>
+
+              \t\t\t}
+
+              \t\t},
+
+              \t\t{
+
+              \t\t\t\"method\": \"POST\",
+
+              \t\t\t\"url\": \"/services/data/v61.0/sobjects/Contact\",
+
+              \t\t\t\"referenceId\": \"refContact\",
+
+              \t\t\t\"body\": {
+
+              \t\t\t\t\"LastName\": <contactName>,
+
+              \t\t\t\t\"AccountId\": \"@{refAccount.id}\"
+
+              \t\t\t}
+
+              \t\t}
+
+              \t]
+
+              }"
+            InputPathsMap:
+              accountName: $.detail.accountName
+              contactName: $.detail.contactName
+          Arn: !GetAtt APIDestinationSFDC.Arn
+          RetryPolicy:
+            MaximumRetryAttempts: 0
+          RoleArn: !GetAtt IAMRoleForEBRule.Arn
+      State: ENABLED
+      Name: sfdc-eb-rule            
